@@ -2,12 +2,13 @@ from __future import division
 import numpy as np
 
 class Model(object):
-    def __init__(self, N, K, V, D, S, lr):
-        self.docs
-        self.N = N
+    def __init__(self, data, K, S, lr):
+        self.N = data.N
+        self.V = data.V
+        self.D = data.D
+        self.docs = data.docs
+        self.word_vector = data.vectors
         self.K = K
-        self.V = V
-        self.D = D
         self.S = S
         self.lr = lr
         self.theta = np.zeros((N, K))

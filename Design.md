@@ -14,3 +14,9 @@
   * Model class
   * Data class
   * Preprocess class
+
+5. Parameters to tune:
+  * Learning rate
+  * Batch size
+  * Negative sample size
+

@@ -81,6 +81,7 @@ class Model(object):
                         grad_topic += tmp_gt
                         grad_eta += tmp_ge
 
+                        #building gradient dictionary
                         if w in grad_wv_dict:
                             grad_wv_dict[w] += tmp_gv_pos
                         else:

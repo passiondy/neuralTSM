@@ -61,7 +61,6 @@ class Model(object):
     def train_ft(self, bs, lbd):
         grad_topic = np.zeros((self.K, self.D))
         grad_eta = np.zeros(self.K)
-        #grad_word_vector = np.zeros((self.V, self.D))
         docIdxList = range(self.N)
         docLenList = [len(d) for d in self.docs]
         lbd /= sum(docLenList)*1.0/bs
@@ -100,10 +99,8 @@ class Model(object):
                     wv_idx = [t[0] for t in itemList]
                     grad_wv = np.array([t[1] for t in itemList])
                     self.word_vector[wv_idx] += (self.lr*grad_wv - lbd*self.word_vector[wv_idx])
-                    #self.word_vector += (self.lr*grad_word_vector - lbd*self.word_vector)
                     grad_topic *= 0
                     grad_eta *= 0
-                    #grad_word_vector *= 0
 
             LL = 0
             for n in xrange(self.N):

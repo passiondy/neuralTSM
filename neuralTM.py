@@ -61,7 +61,7 @@ class Model(object):
     def train_ft(self, bs, lbd):
         grad_topic = np.zeros((self.K, self.D))
         grad_eta = np.zeros(self.K)
-        grad_word_vector = np.zeros((self.V, self.D))
+        #grad_word_vector = np.zeros((self.V, self.D))
         docIdxList = range(self.N)
         docLenList = [len(d) for d in self.docs]
         lbd /= sum(docLenList)*1.0/bs
@@ -75,20 +75,35 @@ class Model(object):
                 for b in xrange(bn):
                     grad_topic *= 0
                     grad_eta *= 0
+                    grad_wv_dict = {}
                     for w in self.docs[n][bs*b: bs*(b+1)]:
                         n_samples = self.negative_sampling(self.docs[n], self.S)
                         tmp_gt, tmp_ge, tmp_gv_pos, tmp_gv_neg = self.grad_one_sample_ft(n, w, n_samples)
                         grad_topic += tmp_gt
                         grad_eta += tmp_ge
-                        grad_word_vector[w] += tmp_gv_pos
-                        grad_word_vector[n_samples] += tmp_gv_neg
+
+                        if w in grad_wv_dict:
+                            grad_wv_dict[w] += tmp_gv_pos
+                        else:
+                            grad_wv_dict[w] = tmp_gv_pos
+                        for idxNS in range(len(n_samples)):
+                            neg_sample = n_samples[idxNS]
+                            if neg_sample in grad_wv_dict:
+                                grad_wv_dict[neg_sample] += tmp_gv_neg[idxNS]
+                            else:
+                                grad_wv_dict[neg_sample] = tmp_gv_neg[idxNS]
+
                     self.topic_vector += (self.lr*grad_topic - lbd*self.topic_vector)
                     self.eta[n] += (self.lr*grad_eta - lbd*self.eta[n])
                     self.theta[n] = self.softmax(self.eta[n])
-                    self.word_vector += (self.lr*grad_word_vector - lbd*self.word_vector)
+                    itemList = grad_wv_dict.items()
+                    wv_idx = [t[0] for t in itemList]
+                    grad_wv = np.array([t[1] for t in itemList])
+                    self.word_vector[wv_idx] += (self.lr*grad_wv - lbd*self.word_vector[wv_idx])
+                    #self.word_vector += (self.lr*grad_word_vector - lbd*self.word_vector)
                     grad_topic *= 0
                     grad_eta *= 0
-                    grad_word_vector *= 0
+                    #grad_word_vector *= 0
 
             LL = 0
             for n in xrange(self.N):

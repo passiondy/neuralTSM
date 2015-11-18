@@ -21,10 +21,12 @@ class Model(object):
         else:
             self.topic_vector = np.random.randn(K, self.D)
 
-    def train(self, bs):
+    def train_no_ft(self, bs, lbd):
         grad_topic = np.zeros((self.K, self.D))
         grad_eta = np.zeros(self.K)
         docIdxList = range(self.N)
+        docLenList = [len(d) for d in self.docs]
+        lbd /= sum(docLenList)*1.0/bs
         for it in xrange(self.maxIter):
             st = time.time()
             # random shuffle
@@ -37,14 +39,57 @@ class Model(object):
                     grad_eta *= 0
                     for w in self.docs[n][bs*b: bs*(b+1)]:
                         n_samples = self.negative_sampling(self.docs[n], self.S)
-                        tmp_gt, tmp_ge = self.grad_one_sample(n, w, n_samples)
+                        tmp_gt, tmp_ge = self.grad_one_sample_no_ft(n, w, n_samples)
                         grad_topic += tmp_gt
                         grad_eta += tmp_ge
-                    self.topic_vector += self.lr*grad_topic
-                    self.eta[n] += self.lr*grad_eta
+                    self.topic_vector += (self.lr*grad_topic - lbd*self.topic_vector)
+                    self.eta[n] += (self.lr*grad_eta - lbd*self.eta[n])
                     self.theta[n] = self.softmax(self.eta[n])
-                #if n%100 == 0:
-                #print n, " docs"
+                    grad_topic *= 0
+                    grad_eta *= 0
+
+            LL = 0
+            for n in xrange(self.N):
+                doc_vec = self.theta[n].dot(self.topic_vector)
+                doc_word = np.inner(doc_vec, self.word_vector)
+                doc_word_prob = self.softmax(doc_word)
+                for w in self.docs[n]:
+                    LL += np.log(doc_word_prob[w])
+            print it, LL
+            print time.time()-st
+
+    def train_ft(self, bs, lbd):
+        grad_topic = np.zeros((self.K, self.D))
+        grad_eta = np.zeros(self.K)
+        grad_word_vector = np.zeros((self.V, self.D))
+        docIdxList = range(self.N)
+        docLenList = [len(d) for d in self.docs]
+        lbd /= sum(docLenList)*1.0/bs
+        for it in xrange(self.maxIter):
+            st = time.time()
+            # random shuffle
+            random.shuffle(docIdxList)
+            for n in docIdxList:
+                L = len(self.docs[n])
+                bn = int(math.ceil(L/bs))
+                for b in xrange(bn):
+                    grad_topic *= 0
+                    grad_eta *= 0
+                    for w in self.docs[n][bs*b: bs*(b+1)]:
+                        n_samples = self.negative_sampling(self.docs[n], self.S)
+                        tmp_gt, tmp_ge, tmp_gv_pos, tmp_gv_neg = self.grad_one_sample_ft(n, w, n_samples)
+                        grad_topic += tmp_gt
+                        grad_eta += tmp_ge
+                        grad_word_vector[w] += tmp_gv_pos
+                        grad_word_vector[n_samples] += tmp_gv_neg
+                    self.topic_vector += (self.lr*grad_topic - lbd*self.topic_vector)
+                    self.eta[n] += (self.lr*grad_eta - lbd*self.eta[n])
+                    self.theta[n] = self.softmax(self.eta[n])
+                    self.word_vector += (self.lr*grad_word_vector - lbd*self.word_vector)
+                    grad_topic *= 0
+                    grad_eta *= 0
+                    grad_word_vector *= 0
+
             LL = 0
             for n in xrange(self.N):
                 doc_vec = self.theta[n].dot(self.topic_vector)
@@ -64,6 +109,7 @@ class Model(object):
         self.save_matrix(model_prefix+".eta.txt", self.eta)
         self.save_matrix(model_prefix+".theta.txt", self.theta)
         self.save_matrix(model_prefix+".topic_vector.txt", self.topic_vector)
+        self.save_matrix(model_prefix+".word_vector.txt", self.word_vector)
         weight = np.dot(self.topic_vector, self.word_vector.T)
         prob = self.softmax(weight)
         lines = []
@@ -87,7 +133,7 @@ class Model(object):
             numerator = theta.sum(axis=1)
             return theta/numerator.reshape(numerator.shape[0], 1)
 
-    def grad_one_sample(self, n, i, neg_samples):
+    def grad_one_sample_no_ft(self, n, i, neg_samples):
         prod_i = np.inner(self.word_vector[i], self.topic_vector)
         prod_neg = np.dot(self.word_vector[neg_samples], self.topic_vector.T)
         sig_i = 1-self.sigmoid(np.inner(self.theta[n], prod_i))
@@ -97,6 +143,20 @@ class Model(object):
         weight *= self.theta[n]
         grad_eta = sig_i*np.inner(weight, prod_i) - np.sum(sig_neg*np.dot(weight, prod_neg.T), axis=1)
         return grad_topic, grad_eta
+
+    def grad_one_sample_ft(self, n, i, neg_samples):
+        prod_i = np.inner(self.word_vector[i], self.topic_vector)
+        prod_neg = np.dot(self.word_vector[neg_samples], self.topic_vector.T)
+        sig_i = 1-self.sigmoid(np.inner(self.theta[n], prod_i))
+        sig_neg = 1-self.sigmoid(-np.inner(self.theta[n], prod_neg))
+        grad_topic = (sig_i*self.word_vector[i] - np.sum(sig_neg.reshape(sig_neg.shape[0],1)*self.word_vector[neg_samples], axis=0))*self.theta[n].reshape(self.K, 1)
+        weight = np.eye(self.K) - np.ones((self.K, self.K))*self.theta[n].reshape(self.K, 1)
+        weight *= self.theta[n]
+        grad_eta = sig_i*np.inner(weight, prod_i) - np.sum(sig_neg*np.dot(weight, prod_neg.T), axis=1)
+        doc_vector = np.dot(self.theta[n], self.topic_vector)
+        grad_vector_pos = sig_i*doc_vector
+        grad_vector_neg = -doc_vector*sig_neg.reshape(sig_neg.shape[0], 1)
+        return grad_topic, grad_eta, grad_vector_pos, grad_vector_neg
 
     def sigmoid(self, x):
         return 1.0/(1+np.exp(-x))
@@ -110,5 +170,4 @@ class Model(object):
                 samples.append(s)
                 l += 1
         return samples
-
 
